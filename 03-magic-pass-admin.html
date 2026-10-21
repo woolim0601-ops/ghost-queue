@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>귀신의 집 · 매직패스 관리</title>
+<style>
+  :root { color-scheme: dark; font-family: system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#0b0c19; color:#f4f1ff; }
+  main { width:min(840px, 100%); margin:auto; padding:32px 16px 70px; }
+  header { margin-bottom:22px; } h1 { font-size:clamp(1.6rem,4vw,2.3rem);margin:4px 0 8px; }
+  .sub { color:#b6b2d2; font-size:14px; } .eyebrow { letter-spacing:2px;color:#b9a9f7;font-size:12px;font-weight:bold; }
+  section { background:#17192c; border:1px solid #393954; padding:20px; border-radius:18px; margin:16px 0; }
+  h2 { margin:0 0 16px;font-size:1.1rem; }
+  .two { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px; }
+  .field { display:grid;gap:7px;margin-bottom:12px; } label { font-weight:600;font-size:13px;color:#c3bee0; }
+  input { width:100%;padding:13px;border:1px solid #666380;background:#0c0e21;color:white;border-radius:10px;font-size:16px; }
+  input:focus { outline:2px solid #987af1;outline-offset:1px; }
+  button { border:0;border-radius:11px;padding:12px 16px;font-size:14px;font-weight:700;cursor:pointer;background:#9882ee;color:#111124; }
+  button:disabled { opacity:.55;cursor:not-allowed; }
+  button.secondary { background:#34354f;color:#faf9ff; }
+  button.danger { background:#6d334c;color:#ffe7ef; }
+  .actions { display:flex;gap:8px;flex-wrap:wrap; }
+  .muted { color:#b6b2d2;font-size:13px; }
+  #message { min-height:22px;margin:12px 0;font-size:14px; }
+  #message.error {color:#ffb9cc;} #message.good {color:#aaf1c8;}
+  .ticket { background:linear-gradient(120deg,#fbdd85,#fff8d8);border-radius:16px;padding:18px;color:#332600; margin-top:16px; }
+  .ticket .passcode { font-size:clamp(13px,2.6vw,22px);font-weight:900;word-break:break-word;letter-spacing:.3px;margin:14px 0; }
+  .ticket .brand { font-size:11px;letter-spacing:2px;font-weight:800; }
+  .ticket small { display:block; }
+  .hidden { display:none; } .pill { padding:5px 8px;border-radius:8px;font-size:12px;display:inline-block; }
+  .pill.ready { background:#274a3c;color:#c2f7d8; } .pill.used { background:#38374c;color:#d8d5ee; } .pill.cancelled { background:#542b39;color:#f9baca; }
+  #list { display:grid;gap:9px; }
+  .pass-row { background:#0e1022;border:1px solid #383a51;padding:12px;border-radius:10px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px; }
+  .pass-row code { display:block;word-break:break-all;font-size:12px;color:#f1e7bd;margin:6px 0; }
+  .stats { display:flex;gap:8px;flex-wrap:wrap; }
+  .stats span { background:#272b44;border-radius:10px;padding:8px 12px;font-size:13px; }
+  @media(max-width:540px) {.two {grid-template-columns:1fr;}section{padding:16px;}}
+  @media print {
+    body {background:#fff;color:#000;}
+    main > *:not(#ticketPrintSection) { display:none !important; }
+    #ticketPrintSection { display:block !important; background:white;border:0;padding:0;margin:0; }
+    #ticketPrintSection > h2, #printActions { display:none !important; }
+    .ticket { color:#000;background:#fff;border:2px solid black; width:95%; }
+  }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div class="eyebrow">GHOST HOUSE · STAFF ONLY</div>
+  <h1>매직패스 관리</h1>
+  <div class="sub">기존 일반 번호표와 별도로 매직패스를 발급하고 입장 완료를 기록합니다.</div>
+</header>
+<section>
+  <h2>1. 관리자 인증</h2>
+  <div class="field"><label for="key">관리자 키 (Cloudflare ADMIN_KEY 값)</label><input type="password" id="key" autocomplete="off" placeholder="관리자 키 입력"></div>
+  <div class="actions"><button class="secondary" id="refresh">목록 불러오기</button></div>
+  <p class="muted">키는 서버에 인증 요청할 때만 사용하며, 웹사이트 코드나 브라우저 저장소에 저장하지 않습니다.</p>
+</section>
+<section>
+  <h2>2. 매직패스 발급</h2>
+  <div class="two"><div class="field"><label for="partySize">입장 인원</label><input type="number" id="partySize" min="1" max="10" value="1"></div></div>
+  <button id="issue">새 매직패스 발급</button>
+  <p id="message" role="status" aria-live="polite"></p>
+</section>
+<section id="ticketPrintSection" class="hidden">
+  <h2>발급 완료</h2>
+  <div class="ticket">
+    <div class="brand">GHOST HOUSE · MAGIC PASS</div>
+    <div class="passcode" id="ticketCode"></div>
+    <div id="ticketPeople"></div>
+    <small>1회 우선 입장 · 현장 스태프 확인 후 사용 완료</small>
+    <small>복사 또는 타인 양도 시 먼저 사용한 1회만 인정됩니다.</small>
+  </div>
+  <div class="actions" id="printActions" style="margin-top:12px">
+    <button id="printTicket">발급증 인쇄</button><button id="copyCode" class="secondary">번호 복사</button>
+  </div>
+</section>
+<section>
+  <h2>3. 입장 관리</h2>
+  <p class="muted">입장 직전에 번호와 인원을 확인한 후 <b>사용 완료</b>를 누르세요. 중복 사용은 서버에서 차단합니다.</p>
+  <div class="stats" id="stats"></div>
+  <div class="field" style="margin-top:16px"><label for="redeemCode">번호로 직접 사용 처리</label><input id="redeemCode" placeholder="MP-..." spellcheck="false" autocomplete="off"></div>
+  <div class="actions"><button id="redeem">사용 완료</button><button id="refresh2" class="secondary">목록 새로고침</button></div>
+  <div id="list" style="margin-top:16px"></div>
+</section>
+</main>
+<script>
+// 이 한 줄만 본인의 실제 Worker URL로 바꿔 주세요. 뒤에 /를 붙이지 않습니다.
+const API_BASE = 'https://YOUR-WORKER.YOUR-SUBDOMAIN.workers.dev';
+const $ = (id) => document.getElementById(id);
+let lastCode = '';
+function message(text, error = false) {
+  $('message').textContent = text;
+  $('message').className = error ? 'error' : 'good';
+}
+async function api(path, method = 'GET', body) {
+  const key = $('key').value.trim();
+  if (!key) throw new Error('관리자 키를 먼저 입력하세요.');
+  if (API_BASE.includes('YOUR-WORKER')) throw new Error('HTML의 API_BASE를 실제 Worker 주소로 수정하세요.');
+  const res = await fetch(API_BASE + path, {
+    method,
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Key': key },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    cache: 'no-store',
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `요청 실패 (${res.status})`);
+  return data;
+}
+function setBusy(button, busy) {button.disabled = busy;}
+async function issue() {
+  const button = $('issue'); setBusy(button, true);
+  try {
+    const partySize = Number($('partySize').value);
+    const data = await api('/api/magic-passes', 'POST', { partySize });
+    lastCode = data.code;
+    $('ticketCode').textContent = data.code;
+    $('ticketPeople').textContent = `입장 인원: ${data.partySize}명`;
+    $('ticketPrintSection').classList.remove('hidden');
+    message('발급 성공! 번호를 학생에게 전달하거나 인쇄해 주세요.');
+    await load();
+  } catch (e) { message(e.message, true); }
+  finally { setBusy(button, false); }
+}
+async function updateStatus(code, type) {
+  if (!confirm(type === 'redeem' ? '실제로 입장하는 매직패스인가요? 사용 완료 후 되돌릴 수 없습니다.' : '발급한 패스를 취소할까요?')) return;
+  try {
+    await api('/api/magic-passes/' + type, 'POST', { code });
+    message(type === 'redeem' ? '사용 완료 처리했습니다.' : '발급 취소했습니다.');
+    await load();
+  } catch(e) { message(e.message, true); }
+}
+async function load() {
+  try {
+    const { passes } = await api('/api/magic-passes');
+    const ready = passes.filter(p => p.status === 'ready').length;
+    const used = passes.filter(p => p.status === 'used').length;
+    const cancelled = passes.filter(p => p.status === 'cancelled').length;
+    const stats = $('stats'); stats.replaceChildren();
+    for (const text of [`대기 중 ${ready}팀`, `사용 완료 ${used}팀`, `취소 ${cancelled}팀`]) {
+      const x = document.createElement('span'); x.textContent = text; stats.append(x);
+    }
+    const list = $('list'); list.replaceChildren();
+    for (const pass of passes) {
+      const row = document.createElement('div'); row.className = 'pass-row';
+      const details = document.createElement('div');
+      const state = document.createElement('span'); state.className = 'pill ' + pass.status;
+      state.textContent = {ready:'사용 가능',used:'사용 완료',cancelled:'취소됨'}[pass.status] || pass.status;
+      const code = document.createElement('code'); code.textContent = pass.code;
+      const people = document.createElement('span'); people.className = 'muted'; people.textContent = pass.partySize + '명';
+      details.append(state, code, people); row.append(details);
+      if (pass.status === 'ready') {
+        const actions = document.createElement('div'); actions.className = 'actions';
+        const use = document.createElement('button'); use.textContent = '사용 완료';
+        use.addEventListener('click', () => updateStatus(pass.code, 'redeem'));
+        const cancel = document.createElement('button'); cancel.className = 'danger'; cancel.textContent = '취소';
+        cancel.addEventListener('click', () => updateStatus(pass.code, 'cancel'));
+        actions.append(use, cancel); row.append(actions);
+      }
+      list.append(row);
+    }
+    if (!passes.length) { const x=document.createElement('p');x.className='muted';x.textContent='발급된 매직패스가 없습니다.';list.append(x); }
+  } catch(e) { message(e.message, true); }
+}
+$('issue').addEventListener('click', issue);
+$('refresh').addEventListener('click', load);
+$('refresh2').addEventListener('click', load);
+$('redeem').addEventListener('click', () => updateStatus($('redeemCode').value.trim().toUpperCase(), 'redeem'));
+$('printTicket').addEventListener('click', () => window.print());
+$('copyCode').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(lastCode); message('번호를 복사했습니다.'); }
+  catch { message('복사에 실패했습니다. 번호를 직접 선택해 주세요.', true); }
+});
+</script>
+</body>
+</html>
