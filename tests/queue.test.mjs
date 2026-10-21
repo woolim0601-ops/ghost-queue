@@ -1,0 +1,31 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {readFileSync} from 'node:fs';
+import worker from '../server/worker.mjs';
+function db(){const sqlite=new DatabaseSync(':memory:');sqlite.exec(readFileSync(new URL('../server/schema.sql',import.meta.url),'utf8'));const DB={prepare(sql){let args=[];return {bind(...a){args=a;return this;},async first(){return sqlite.prepare(sql).get(...args)||null;},async all(){return {results:sqlite.prepare(sql).all(...args)};},async run(){return {meta:sqlite.prepare(sql).run(...args)};}};},async batch(stmts){sqlite.exec('BEGIN');try{const out=[];for(const s of stmts)out.push(await s.run());sqlite.exec('COMMIT');return out;}catch(e){sqlite.exec('ROLLBACK');throw e;}}};return DB;}
+test('접수→중복방지→공개번호표→호출→입장→삭제 및 접근권한',async()=>{
+ const env={DB:db(),ADMIN_KEY:'admin-secret-long',KIOSK_KEY:'kiosk-secret-long',ALLOWED_ORIGIN:'https://school.github.io'};
+ const request=async(path,body,key='',origin=env.ALLOWED_ORIGIN)=>{const res=await worker.fetch(new Request('https://api.example'+path,{method:body?'POST':'GET',headers:{Origin:origin,...(key?{Authorization:'Bearer '+key}:{}),...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined}),env);return {status:res.status,data:await res.json()};};
+ const b={studentId:'30101',name:'가상학생',phone:'010-0000-0001',people:4,consent:true,requestId:crypto.randomUUID()};
+ assert.equal((await request('/api/admin/tickets')).status,401);
+ assert.equal((await request('/api/kiosk',null,'wrong')).status,401);
+ assert.equal((await request('/api/register',b)).status,401);
+ assert.equal((await request('/api/status',null,'','https://evil.example')).status,403);
+ assert.equal((await request('/api/register',{...b,consent:false},env.KIOSK_KEY)).status,400);
+ const a=await request('/api/register',b,env.KIOSK_KEY);assert.equal(a.status,201);assert.equal(a.data.id,1);
+ assert.equal((await request('/api/register',b,env.KIOSK_KEY)).data.id,1);
+ assert.equal((await request('/api/register',{...b,requestId:crypto.randomUUID()},env.KIOSK_KEY)).status,409);
+ const publicTicket=await request('/api/ticket?token='+a.data.token);assert.equal(publicTicket.data.people,4);assert.equal(publicTicket.data.name,undefined);assert.equal(publicTicket.data.phone,undefined);
+ assert.equal((await request('/api/admin/tickets',null,env.KIOSK_KEY)).status,401);
+ assert.equal((await request('/api/admin/state',{id:1,from:'waiting',to:'entered'},env.ADMIN_KEY)).status,400);
+ assert.equal((await request('/api/admin/state',{id:1,from:'waiting',to:'called'},env.ADMIN_KEY)).status,200);
+ assert.equal((await request('/api/admin/state',{id:1,from:'waiting',to:'called'},env.ADMIN_KEY)).status,409);
+ assert.deepEqual((await request('/api/status')).data.called,[1]);
+ assert.equal((await request('/api/admin/state',{id:1,from:'called',to:'entered'},env.ADMIN_KEY)).status,200);
+ await request('/api/admin/accepting',{accepting:false},env.ADMIN_KEY);
+ assert.equal((await request('/api/register',{...b,requestId:crypto.randomUUID()},env.KIOSK_KEY)).status,409);
+ await request('/api/admin/purge',{confirm:'전체 명단 삭제'},env.ADMIN_KEY);
+ assert.equal((await request('/api/admin/tickets',null,env.ADMIN_KEY)).data.tickets.length,0);
+ assert.equal((await request('/api/ticket?token='+a.data.token)).status,404);
+});

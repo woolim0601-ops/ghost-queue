@@ -1,0 +1,13 @@
+name = "gomsoul-ghost-queue"
+main = "worker.mjs"
+compatibility_date = "2026-10-01"
+
+[vars]
+ALLOWED_ORIGIN = "https://YOUR-USERNAME.github.io"
+# 아래는 안내문 표시용. 행사 후 실제 삭제 작업도 해야 합니다.
+RETENTION_NOTICE = "행사 종료 후 24시간 이내 삭제"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "ghost-queue"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
